@@ -1,0 +1,31 @@
+name: One-time Discord test
+
+on:
+  schedule:
+    # 2026-06-07 21:02 KST = 2026-06-07 12:02 UTC.
+    - cron: "2 12 * * *"
+  workflow_dispatch:
+
+jobs:
+  send-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Send one-time Discord test
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: |
+          TARGET_KST="2026-06-07 21:02"
+          NOW_KST="$(TZ=Asia/Seoul date '+%Y-%m-%d %H:%M')"
+
+          if [ "$NOW_KST" != "$TARGET_KST" ]; then
+            echo "Skipping one-time test. NOW_KST=$NOW_KST TARGET_KST=$TARGET_KST"
+            exit 0
+          fi
+
+          curl -sS -X POST \
+            -H 'Content-Type: application/json' \
+            -d "{\"content\":\"⏰ **GitHub Actions 단발 테스트 알림**\nMac이 꺼져 있어도 GitHub 서버에서 Discord로 전송되는지 확인하는 테스트입니다.\n**시간:** ${NOW_KST} KST\n✅ 이 메시지가 도착하면 클라우드 자동화 경로가 정상입니다.\"}" \
+            "$DISCORD_WEBHOOK_URL"
+
