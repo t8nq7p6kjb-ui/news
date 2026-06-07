@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 import textwrap
 import urllib.error
@@ -31,7 +32,21 @@ def require_env(name: str) -> str:
     return value
 
 
+def clean_discord_webhook_url(value: str) -> str:
+    value = value.strip().strip("'\"`<>")
+    match = re.search(r"https://(?:canary\.|ptb\.)?discord(?:app)?\.com/api/webhooks/[^\s'\"`<>]+", value)
+    if match:
+        return match.group(0)
+    if not value.startswith(("https://discord.com/api/webhooks/", "https://discordapp.com/api/webhooks/")):
+        raise SystemExit(
+            "DISCORD_WEBHOOK_URL must be the full Discord webhook URL. "
+            "It should start with https://discord.com/api/webhooks/."
+        )
+    return value
+
+
 def post_json(url: str, payload: dict[str, object]) -> None:
+    url = clean_discord_webhook_url(url)
     data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
     request = urllib.request.Request(
         url,
