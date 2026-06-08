@@ -56,12 +56,16 @@ def post_json(url: str, payload: dict[str, object]) -> None:
     )
     try:
         with urllib.request.urlopen(request, timeout=20) as response:
-            response.read()
-    except urllib.error.URLError:
-        subprocess.run(
+            body = response.read().decode("utf-8", errors="replace")
+            print(f"Discord POST succeeded with HTTP {response.status}. Response length: {len(body)}")
+    except urllib.error.URLError as exc:
+        print(f"urllib Discord POST failed, retrying with curl: {exc}")
+        completed = subprocess.run(
             [
                 "curl",
                 "-sS",
+                "-w",
+                "\nHTTP_STATUS:%{http_code}\n",
                 "-X",
                 "POST",
                 "-H",
@@ -71,7 +75,10 @@ def post_json(url: str, payload: dict[str, object]) -> None:
                 url,
             ],
             check=True,
+            capture_output=True,
+            text=True,
         )
+        print(completed.stdout)
 
 
 def chunk_message(message: str, limit: int = DISCORD_LIMIT) -> list[str]:
@@ -222,8 +229,11 @@ def main() -> int:
     else:
         messages = fallback_report(payload)
 
+    print(f"Prepared {len(messages)} Discord message(s).")
     for message in messages:
-        for chunk in chunk_message(message):
+        chunks = chunk_message(message)
+        print(f"Sending message split into {len(chunks)} chunk(s).")
+        for chunk in chunks:
             post_json(webhook_url, {"content": chunk})
     return 0
 
