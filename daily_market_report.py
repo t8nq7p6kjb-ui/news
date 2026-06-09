@@ -24,6 +24,25 @@ from market_report_sources import collect
 DISCORD_LIMIT = 1900
 DEFAULT_MODEL = "gpt-5.4-mini"
 
+SOURCE_NAME_KO = {
+    "Yahoo Finance": "야후 파이낸스",
+    "CNBC Markets": "CNBC 마켓",
+    "CNBC Economy": "CNBC 경제",
+    "CNN Business": "CNN 비즈니스",
+    "AP Business": "AP 비즈니스",
+    "Investing.com Stock Market News": "인베스팅닷컴 증시 뉴스",
+    "Seeking Alpha Market News": "시킹알파 마켓 뉴스",
+    "ZDNet": "ZDNet",
+    "CoinDesk": "코인데스크",
+    "Cointelegraph": "코인텔레그래프",
+    "Bitcoin Magazine": "비트코인 매거진",
+    "Finviz Market Map": "핀비즈 마켓맵",
+    "Finviz": "핀비즈",
+    "CNBC US Markets": "CNBC 미국 시장",
+    "CNN Fear & Greed": "CNN 공포와 탐욕 지수",
+    "Hankyung Global Market": "한경 글로벌마켓",
+}
+
 
 def require_env(name: str) -> str:
     value = os.environ.get(name, "").strip()
@@ -98,11 +117,12 @@ def chunk_message(message: str, limit: int = DISCORD_LIMIT) -> list[str]:
 
 
 def format_source(item: dict[str, object]) -> str:
-    published = item.get("published_at") or "unknown"
+    published = item.get("published_at") or "확인 필요"
+    source_name = SOURCE_NAME_KO.get(str(item["source"]), str(item["source"]))
     return (
         f"• {item['title']}\n"
-        f"  Source: {item['source']} | Published UTC: {published}\n"
-        f"  URL: {item['url']}"
+        f"  출처: {source_name} | 발행 시각(UTC): {published}\n"
+        f"  링크: {item['url']}"
     )
 
 
@@ -113,27 +133,30 @@ def fallback_report(payload: dict[str, object]) -> list[str]:
     references = payload["reference_pages"]
 
     equity_lines = "\n\n".join(
-        f"**[{index}] 🟡 {item['title']}**\n"
-        f"• 출처: {item['source']}\n"
-        f"• 발행: {item.get('published_at') or 'unknown'}\n"
+        f"**[{index}] 🟡 원문 뉴스 링크**\n"
+        f"• 출처: {SOURCE_NAME_KO.get(str(item['source']), str(item['source']))}\n"
+        f"• 발행: {item.get('published_at') or '확인 필요'}\n"
         f"• 링크: {item['url']}"
         for index, item in enumerate(equities, start=1)
     )
     bitcoin_lines = "\n\n".join(
-        f"**[{index}] 🟡 {item['title']}**\n"
-        f"• 출처: {item['source']}\n"
-        f"• 발행: {item.get('published_at') or 'unknown'}\n"
+        f"**[{index}] 🟡 원문 뉴스 링크**\n"
+        f"• 출처: {SOURCE_NAME_KO.get(str(item['source']), str(item['source']))}\n"
+        f"• 발행: {item.get('published_at') or '확인 필요'}\n"
         f"• 링크: {item['url']}"
         for index, item in enumerate(bitcoin, start=1)
     )
-    reference_lines = "\n".join(f"• {page['name']}: {page['url']}" for page in references)
+    reference_lines = "\n".join(
+        f"• {SOURCE_NAME_KO.get(str(page['name']), str(page['name']))}: {page['url']}"
+        for page in references
+    )
 
     return [
         f"📌 **① 시장 요약**\n**기준:** {now_kst}\n\n"
         "OpenAI API 키가 없어 AI 선별 요약 대신 수집된 원문 출처 묶음을 보냅니다.\n"
-        "아래 링크들은 보고서 생성 전에 RSS/공개 피드에서 직접 수집한 URL입니다.",
-        f"📈 **② 미국 증시 Top 10 · 출처 기반**\n\n{equity_lines or '• 수집된 미국 증시 뉴스가 없습니다.'}",
-        f"₿ **③ 비트코인 Top 5 · 출처 기반**\n\n{bitcoin_lines or '• 수집된 비트코인 뉴스가 없습니다.'}",
+        "영문 원문 제목은 번역 품질 보장을 위해 표시하지 않고, 한국어 라벨과 원문 링크만 제공합니다.",
+        f"📈 **② 미국 증시 상위 10개 · 출처 기반**\n\n{equity_lines or '• 수집된 미국 증시 뉴스가 없습니다.'}",
+        f"₿ **③ 비트코인 상위 5개 · 출처 기반**\n\n{bitcoin_lines or '• 수집된 비트코인 뉴스가 없습니다.'}",
         f"🔗 **④ 교차확인 페이지**\n\n{reference_lines}",
     ]
 
@@ -149,12 +172,19 @@ def build_prompt(payload: dict[str, object]) -> str:
         You are writing a Korean Discord morning brief for a US market investor.
         Current report time: {now_kst}.
 
+        Critical language rule:
+        - Every Discord message must be written in Korean.
+        - Translate English headlines and summaries into natural Korean.
+        - Do not leave English section labels such as "Top 10", "Source", "Published", or "Summary".
+        - Ticker symbols, company names, product names, URLs, and source brand names may remain in their standard form when translating them would be awkward.
+        - If a headline cannot be translated confidently, summarize its meaning in Korean and attach the original URL.
+
         Use only the source URLs listed below, or clearly say "확인 필요" when evidence is insufficient.
         Do not invent URLs. Do not use Markdown ordered-list syntax like "1.".
         Use Discord-friendly headers:
         📌 **① 시장 요약**
-        📈 **② 미국 증시 Top 10**
-        ₿ **③ 비트코인 Top 5**
+        📈 **② 미국 증시 상위 10개**
+        ₿ **③ 비트코인 상위 5개**
         🗓️ **④ 오늘 체크할 변수**
         🔗 **⑤ 주요 출처**
 
@@ -162,16 +192,16 @@ def build_prompt(payload: dict[str, object]) -> str:
         Mark impact as 🟢 긍정, 🔴 부정, or 🟡 혼재/중립.
         Keep each issue concise and attach source URLs.
         Return a JSON object shaped exactly like:
-        {{"messages": ["Discord message 1", "Discord message 2"]}}
+        {{"messages": ["한국어 Discord 메시지 1", "한국어 Discord 메시지 2"]}}
         Each message string must be under 1900 characters.
 
-        EQUITY SOURCES:
-        {equity_sources or "No equity sources collected."}
+        미국 증시 원문 출처:
+        {equity_sources or "수집된 미국 증시 원문 출처가 없습니다."}
 
-        BITCOIN SOURCES:
-        {bitcoin_sources or "No bitcoin sources collected."}
+        비트코인 원문 출처:
+        {bitcoin_sources or "수집된 비트코인 원문 출처가 없습니다."}
 
-        REFERENCE PAGES:
+        교차확인 페이지:
         {reference_pages}
         """
     ).strip()
@@ -224,8 +254,9 @@ def main() -> int:
         try:
             messages = call_openai(build_prompt(payload))
         except (RuntimeError, urllib.error.URLError, json.JSONDecodeError) as exc:
+            print(f"AI summary failed, using Korean fallback report: {exc}")
             messages = fallback_report(payload)
-            messages[0] += f"\n\n⚠️ AI 요약 생성 실패로 출처 기반 보고서를 보냅니다: {exc}"
+            messages[0] += "\n\n⚠️ AI 요약 생성에 실패해 출처 기반 한국어 보고서로 대체 발송합니다."
     else:
         messages = fallback_report(payload)
 

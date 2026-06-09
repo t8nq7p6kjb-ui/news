@@ -2,7 +2,8 @@ name: Daily market Discord report
 
 on:
   schedule:
-    # 06:25 KST = 21:25 UTC on the previous calendar day.
+    # Runs every day at 21:25 UTC.
+    # This is 06:25 KST on the next calendar day.
     - cron: "25 21 * * *"
   workflow_dispatch:
 
@@ -27,4 +28,3 @@ jobs:
           OPENAI_MODEL: ${{ vars.OPENAI_MODEL || 'gpt-5.4-mini' }}
           REPORT_LOOKBACK_HOURS: "36"
         run: python3 daily_market_report.py
-
