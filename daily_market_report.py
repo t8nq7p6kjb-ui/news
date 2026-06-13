@@ -43,6 +43,24 @@ SOURCE_NAME_KO = {
     "Hankyung Global Market": "한경 글로벌마켓",
 }
 
+EQUITY_TOPIC_RULES = (
+    (("fed", "rate", "yield", "treasury"), "금리와 Fed 경로가 증시 방향을 좌우"),
+    (("inflation", "cpi", "ppi", "price"), "물가 지표가 금리 기대를 재조정"),
+    (("jobs", "payroll", "employment", "labor"), "고용 지표가 경기와 금리 전망에 영향"),
+    (("nasdaq", "s&p", "dow", "futures"), "미국 주요 지수 흐름 점검"),
+    (("nvidia", "semiconductor", "chip", "ai"), "AI·반도체 섹터 투자심리 점검"),
+    (("earnings", "revenue", "profit"), "기업 실적과 가이던스가 개별주 변동성 확대"),
+    (("oil", "energy", "crude", "middle east"), "유가와 지정학 변수가 인플레 기대에 영향"),
+)
+
+BITCOIN_TOPIC_RULES = (
+    (("bitcoin", "btc", "crypto"), "비트코인 가격과 크립토 투자심리 점검"),
+    (("etf", "fund", "flow", "outflow", "inflow"), "현물 ETF 자금 흐름이 수급의 핵심 변수"),
+    (("fed", "rate", "yield", "dollar"), "금리와 달러 흐름이 비트코인에 압박"),
+    (("sec", "regulation", "stablecoin"), "규제 뉴스가 크립토 밸류에이션에 영향"),
+    (("ether", "ethereum", "solana", "xrp"), "알트코인 뉴스가 크립토 전반 심리에 영향"),
+)
+
 
 def require_env(name: str) -> str:
     value = os.environ.get(name, "").strip()
@@ -126,6 +144,42 @@ def format_source(item: dict[str, object]) -> str:
     )
 
 
+def classify_title(title: str, rules: tuple[tuple[tuple[str, ...], str], ...], default: str) -> str:
+    lowered = title.lower()
+    for keywords, label in rules:
+        if any(keyword in lowered for keyword in keywords):
+            return label
+    return default
+
+
+def format_issue(item: dict[str, object], index: int, category: str) -> str:
+    source_name = SOURCE_NAME_KO.get(str(item["source"]), str(item["source"]))
+    published = item.get("published_at") or "확인 필요"
+    if category == "bitcoin":
+        title = classify_title(
+            str(item["title"]),
+            BITCOIN_TOPIC_RULES,
+            "비트코인 시장 주요 뉴스 확인",
+        )
+        related = "`BTC`, ETF, 크립토 심리"
+    else:
+        title = classify_title(
+            str(item["title"]),
+            EQUITY_TOPIC_RULES,
+            "미국 증시 주요 뉴스 확인",
+        )
+        related = "`SPY`, `QQQ`, 미국 증시"
+
+    return (
+        f"**[{index}] 🟡 {title}**\n"
+        f"• 근거: {source_name}에서 확인된 최신 원문 뉴스입니다. 기사 본문 정밀 분석 전까지는 "
+        f"영향 방향을 **혼재/중립**으로 두고, 가격 반응과 후속 보도를 함께 확인합니다.\n"
+        f"• 관련: {related}\n"
+        f"• 발행: {published}\n"
+        f"• 출처: {item['url']}"
+    )
+
+
 def fallback_report(payload: dict[str, object]) -> list[str]:
     now_kst = datetime.now(ZoneInfo("Asia/Seoul")).strftime("%Y-%m-%d %H:%M KST")
     equities = payload["equity_sources"][:10]
@@ -133,17 +187,11 @@ def fallback_report(payload: dict[str, object]) -> list[str]:
     references = payload["reference_pages"]
 
     equity_lines = "\n\n".join(
-        f"**[{index}] 🟡 원문 뉴스 링크**\n"
-        f"• 출처: {SOURCE_NAME_KO.get(str(item['source']), str(item['source']))}\n"
-        f"• 발행: {item.get('published_at') or '확인 필요'}\n"
-        f"• 링크: {item['url']}"
+        format_issue(item, index, "equity")
         for index, item in enumerate(equities, start=1)
     )
     bitcoin_lines = "\n\n".join(
-        f"**[{index}] 🟡 원문 뉴스 링크**\n"
-        f"• 출처: {SOURCE_NAME_KO.get(str(item['source']), str(item['source']))}\n"
-        f"• 발행: {item.get('published_at') or '확인 필요'}\n"
-        f"• 링크: {item['url']}"
+        format_issue(item, index, "bitcoin")
         for index, item in enumerate(bitcoin, start=1)
     )
     reference_lines = "\n".join(
@@ -153,11 +201,17 @@ def fallback_report(payload: dict[str, object]) -> list[str]:
 
     return [
         f"📌 **① 시장 요약**\n**기준:** {now_kst}\n\n"
-        "OpenAI API 키가 없어 AI 선별 요약 대신 수집된 원문 출처 묶음을 보냅니다.\n"
-        "영문 원문 제목은 번역 품질 보장을 위해 표시하지 않고, 한국어 라벨과 원문 링크만 제공합니다.",
-        f"📈 **② 미국 증시 상위 10개 · 출처 기반**\n\n{equity_lines or '• 수집된 미국 증시 뉴스가 없습니다.'}",
-        f"₿ **③ 비트코인 상위 5개 · 출처 기반**\n\n{bitcoin_lines or '• 수집된 비트코인 뉴스가 없습니다.'}",
-        f"🔗 **④ 교차확인 페이지**\n\n{reference_lines}",
+        "• **핵심 흐름**: 수집된 원문 출처를 바탕으로 미국 증시와 비트코인 주요 변수를 점검합니다.\n"
+        "• **작성 방식**: 예전 테스트 보고서처럼 `시장 요약 → 미국 증시 상위 10개 → 비트코인 상위 5개 → 체크 변수` 순서로 보냅니다.\n"
+        "• **주의**: OpenAI API 키가 없으면 기사 본문을 깊게 번역·분석하지 않고, 출처 기반 한국어 브리핑으로 보냅니다.",
+        f"📈 **② 미국 증시 영향 상위 10개**\n\n{equity_lines or '• 수집된 미국 증시 뉴스가 없습니다.'}",
+        f"₿ **③ 비트코인 영향 상위 5개**\n\n{bitcoin_lines or '• 수집된 비트코인 뉴스가 없습니다.'}",
+        "🗓️ **④ 오늘 체크할 변수**\n\n"
+        "• **금리와 달러**: 미국채 금리와 달러 방향이 성장주와 비트코인 심리에 미치는 영향을 확인합니다.\n"
+        "• **대형 기술주와 반도체**: `QQQ`, `NVDA`, `SMH` 중심으로 위험선호 회복 여부를 봅니다.\n"
+        "• **비트코인 ETF 수급**: 현물 ETF 유입·유출이 `BTC` 가격 탄력의 핵심 변수입니다.\n"
+        "• **시장 심리**: Finviz와 CNN 공포와 탐욕 지수로 섹터 온도와 투자심리를 교차확인합니다.",
+        f"🔗 **⑤ 주요 출처**\n\n{reference_lines}",
     ]
 
 
@@ -183,10 +237,16 @@ def build_prompt(payload: dict[str, object]) -> str:
         Do not invent URLs. Do not use Markdown ordered-list syntax like "1.".
         Use Discord-friendly headers:
         📌 **① 시장 요약**
-        📈 **② 미국 증시 상위 10개**
-        ₿ **③ 비트코인 상위 5개**
+        📈 **② 미국 증시 영향 상위 10개**
+        ₿ **③ 비트코인 영향 상위 5개**
         🗓️ **④ 오늘 체크할 변수**
         🔗 **⑤ 주요 출처**
+
+        Style rule:
+        - Match the previous preferred Discord style from June 6 around 21:13 KST.
+        - Use compact card-like sections, emojis, bold issue titles, **[1]** style numbering, and • sub-bullets.
+        - Each issue should include 근거, 관련, 출처.
+        - Avoid source-link-only reports unless there is no usable source content.
 
         For issue numbering, use **[1]**, **[2]**, etc. For sub-lines, use • bullets.
         Mark impact as 🟢 긍정, 🔴 부정, or 🟡 혼재/중립.
